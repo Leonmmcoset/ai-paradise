@@ -90,3 +90,32 @@ jobs:
           name: paradise-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
+
+  build-ipa:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      # The repository currently does not contain an iOS platform project.
+      # Generate it temporarily in CI so the iOS target can be built.
+      - name: Generate iOS platform
+        run: flutter create --platforms=ios .
+
+      - run: flutter pub get
+
+      - name: Build IPA
+        run: flutter build ipa --no-codesign
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: paradise-ios-ipa
+          path: build/ios/ipa/*.ipa
+          retention-days: 14
