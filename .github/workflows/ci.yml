@@ -92,7 +92,7 @@ jobs:
           retention-days: 14
 
   build-ipa:
-    name: Build iOS IPA
+    name: Build unsigned iOS IPA
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,18 +104,69 @@ jobs:
           cache: true
 
       # The repository currently does not contain an iOS platform project.
-      # Generate it temporarily in CI so the iOS target can be built.
+      # Generate it temporarily in CI.
       - name: Generate iOS platform
         run: flutter create --platforms=ios .
 
-      - run: flutter pub get
+      - name: Get Flutter dependencies
+        run: flutter pub get
 
-      - name: Build IPA
+      # Build the iOS Xcode archive without code signing.
+      # Flutter intentionally does not produce an IPA when --no-codesign
+      # is used, but the .xcarchive is still generated successfully.
+      - name: Build unsigned iOS archive
         run: flutter build ipa --no-codesign
+
+      # Extract the .app from the Xcode archive and package it as an IPA.
+      # An IPA is simply a ZIP archive containing Payload/*.app.
+      - name: Package unsigned IPA
+        run: |
+          set -e
+
+          APP_PATH="build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app"
+          IPA_DIR="build/ios/ipa"
+          PAYLOAD_DIR="${IPA_DIR}/Payload"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::Runner.app was not found in the Xcode archive."
+            echo "Expected: $APP_PATH"
+            exit 1
+          fi
+
+          rm -rf "$IPA_DIR"
+          mkdir -p "$PAYLOAD_DIR"
+
+          cp -R "$APP_PATH" "$PAYLOAD_DIR/"
+
+          cd "$IPA_DIR"
+          zip -qry Paradise-unsigned.ipa Payload
+
+          echo "Unsigned IPA created:"
+          ls -lh Paradise-unsigned.ipa
+
+      - name: Verify IPA
+        run: |
+          set -e
+
+          IPA="build/ios/ipa/Paradise-unsigned.ipa"
+
+          if [ ! -f "$IPA" ]; then
+            echo "::error::IPA was not created."
+            exit 1
+          fi
+
+          echo "=== IPA ==="
+          ls -lh "$IPA"
+
+          echo "=== IPA contents ==="
+          unzip -l "$IPA" | head -50
+
+          echo "=== Payload ==="
+          unzip -l "$IPA" | grep "Payload/"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: paradise-ios-ipa
-          path: build/ios/ipa/*.ipa
+          path: build/ios/ipa/Paradise-unsigned.ipa
           retention-days: 14
